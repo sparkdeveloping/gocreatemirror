@@ -1,5 +1,5 @@
 import { MirrorDashboard } from "@/components/MirrorDashboard";
 
-export default function Home() {
+export default function HomePage() {
   return <MirrorDashboard />;
 }

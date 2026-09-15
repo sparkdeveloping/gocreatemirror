@@ -5,8 +5,11 @@
     "gocreatemirror": {
       "state": {
         ".read": true,
-        ".write": false,
-        ".validate": "newData.hasChildren(['layout', 'updatedAt']) && newData.child('layout').isString() && newData.child('updatedAt').isString()"
+        ".write": false
+      },
+      "screens": {
+        ".read": false,
+        ".write": false
       }
     }
   }

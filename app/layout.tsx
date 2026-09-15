@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "GoCreateMirror",
-  description: "GoCreate's remotely controlled vertical smart mirror.",
+  title: { default: "GoCreateMirror", template: "%s · GoCreateMirror" },
+  description: "GoCreate's remotely controlled vertical smart mirror and screen studio.",
   applicationName: "GoCreateMirror",
   manifest: "/manifest.webmanifest",
 };
@@ -18,9 +18,5 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
-  return (
-    <html lang="en">
-      <body>{children}</body>
-    </html>
-  );
+  return <html lang="en"><body>{children}</body></html>;
 }

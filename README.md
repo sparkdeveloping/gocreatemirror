@@ -1,44 +1,131 @@
-# GoCreateMirror v3 — Firebase Realtime
+# GoCreateMirror v4 — Screen Studio
 
-Portrait smart-mirror UI for a Raspberry Pi 3B+ kiosk and a 22/23-inch vertical display.
+A remotely managed smart-mirror system for the GoCreate Raspberry Pi kiosk. The mirror itself remains a lightweight browser. The entire visual system is controlled from Next.js + Firebase Realtime Database.
 
-## What is included
+## What v4 adds
 
-- Five switchable mirror layouts at `/admin`
-- **Firebase Realtime Database** for persistent remote layout state
-- Actual Firebase realtime subscriptions on the Pi and `/admin` — no normal state polling delay
-- Secure server-side admin writes through `firebase-admin`
-- Automatic Vercel deployment detection and refresh
-- Live weather proxy, facility hours, branding, and kiosk scripts
-- Icon-only mode with the GoCreate mark dead center
+- **20 polished screen designs** across Signature, Minimal, Brand, Information, Productivity, Events, Media, Graphic, and Animated categories.
+- **Animated layouts** with glow, float, breathe, pulse, drift, fade, ticker, slide, and shimmer motion.
+- A true **Live View** at `/admin` showing exactly what the physical mirror is rendering.
+- **Edit Live View**: manually edit the active screen and publish it directly. Selecting any template or custom screen later intentionally overrides the manual Live View.
+- **Custom Screens**: create, save, edit, delete and publish unlimited custom layouts.
+- Full drag-and-drop **screen editor** built around the mirror's native 1080×1920 portrait canvas.
+- Widget positioning, width/height, rotation, scale, opacity, layer order, locking, animation, colors, borders, padding, glow and blur controls.
+- Image uploads are resized in-browser before being saved into a custom screen.
+- Admin login now happens **before `/admin` opens**. Enter the PIN once; a signed HTTP-only admin session remains valid for seven days.
+- Firebase Realtime Database still pushes the resolved live screen to the Pi immediately.
+- New Vercel deployments are detected automatically by the mirror and trigger a refresh.
 
-## Run locally
+## Widget library
 
-```bash
-npm install
-npm run dev
+The editor currently includes 27 widget types:
+
+- Clock
+- Date
+- Full weather
+- Standalone temperature
+- GoCreate open/closed status
+- Time-aware greeting
+- Text
+- Quote
+- Calendar / agenda
+- Countdown
+- Animated ticker / marquee
+- GoCreate studio grid
+- GoCreate logo / icon
+- Photo / image
+- Web iframe
+- Connection status
+- Custom metric
+- Badge
+- Divider
+- Shape
+- Wind speed
+- Feels-like temperature
+- Day progress
+- ISO week number
+- Video
+- Editable list
+- Progress bar
+
+### Calendar widget
+
+The Calendar widget accepts a public HTTPS iCal URL. For example, a public Google Calendar or Outlook ICS feed can be pasted into the widget inspector. The mirror proxies and caches that feed through `/api/calendar`.
+
+### Photo widget
+
+You can either paste an image URL or upload a photo from the admin editor. Uploaded images are resized to a maximum dimension of 1600px and JPEG-compressed before being stored with the screen definition. For large galleries, hosted image URLs are preferable.
+
+## Admin behavior
+
+### `/admin/login`
+
+Enter `ADMIN_PIN` once. The PIN is checked only on the server. The browser receives a signed HTTP-only cookie; JavaScript cannot read the session value.
+
+### `/admin`
+
+The admin application has three primary sections:
+
+1. **Live View** — exact screen currently rendered by the Pi.
+2. **Screen Library** — 20 ready-to-use designs. `Go Live` publishes immediately. `Edit copy` opens any template in the full editor.
+3. **Custom Screens** — your persistent user-created layouts.
+
+### Live View override model
+
+The server always stores one fully resolved `screen` object in Firebase:
+
+```text
+/gocreatemirror/state
 ```
 
-Open:
+When you select a template:
 
-- `http://localhost:3000` — mirror
-- `http://localhost:3000/admin` — layout control
+```text
+Template -> resolved screen -> Firebase state -> Pi
+```
 
-## Firebase project already wired in
+When you select a saved custom screen:
 
-The project uses the Firebase web configuration supplied for:
+```text
+Custom screen -> Firebase state -> Pi
+```
 
-- Project: `jollytiles`
-- Realtime Database: `https://jollytiles.firebaseio.com`
-- Mirror state path: `/gocreatemirror/state`
+When you choose **Edit Live View**:
 
-The Firebase web API key is intentionally client-visible and is not an admin secret. **Do not put a service-account private key in the source code.**
+```text
+Current live screen -> editor -> publish exact edited screen -> Firebase state -> Pi
+```
 
-## One-time Firebase setup
+That manual screen is marked as `kind: live`. The next template/custom selection replaces it by design.
 
-### 1. Set Realtime Database Rules
+Saved custom screens live privately at:
 
-Firebase Console -> **Realtime Database** -> **Rules** and use the contents of `database.rules.json`:
+```text
+/gocreatemirror/screens/{screen-id}
+```
+
+The supplied Firebase rules allow public read access only to the resolved live state. Saved custom designs remain inaccessible through the browser Firebase SDK.
+
+## Firebase setup
+
+The client configuration already contains the Firebase web settings supplied for the `jollytiles` project. The web API key is not an admin credential.
+
+### 1. Make sure Realtime Database is active
+
+Firebase Console -> Build -> Realtime Database.
+
+If the old `jollytiles` database is deactivated, re-enable it or create an active Realtime Database instance. Copy the **exact database URL Firebase shows**.
+
+Set that URL in Vercel for both:
+
+```text
+FIREBASE_DATABASE_URL=<exact URL>
+NEXT_PUBLIC_FIREBASE_DATABASE_URL=<exact URL>
+```
+
+### 2. Rules
+
+Firebase Console -> Realtime Database -> Rules, paste `database.rules.json`:
 
 ```json
 {
@@ -48,96 +135,136 @@ Firebase Console -> **Realtime Database** -> **Rules** and use the contents of `
     "gocreatemirror": {
       "state": {
         ".read": true,
-        ".write": false,
-        ".validate": "newData.hasChildren(['layout', 'updatedAt']) && newData.child('layout').isString() && newData.child('updatedAt').isString()"
+        ".write": false
+      },
+      "screens": {
+        ".read": false,
+        ".write": false
       }
     }
   }
 }
 ```
 
-This exposes only the selected mirror layout for realtime reading and blocks direct browser writes. The Vercel API uses Firebase Admin and can write securely despite that rule.
+The Vercel server uses Firebase Admin and can still write despite these browser rules.
 
-### 2. Give Vercel Firebase Admin credentials
+### 3. Firebase Admin credentials
 
-Firebase Console -> **Project settings** -> **Service accounts** -> **Generate new private key**.
+Firebase Console -> Project Settings -> Service accounts -> Generate new private key.
 
-Download the JSON file. In Vercel -> GoCreateMirror -> **Settings** -> **Environment Variables**, add:
+In Vercel add:
 
 ```text
 FIREBASE_PROJECT_ID=jollytiles
-FIREBASE_DATABASE_URL=https://jollytiles.firebaseio.com
-FIREBASE_CLIENT_EMAIL=<client_email from the JSON file>
-FIREBASE_PRIVATE_KEY=<private_key from the JSON file>
+FIREBASE_DATABASE_URL=<exact active RTDB URL>
+FIREBASE_CLIENT_EMAIL=<client_email from service account JSON>
+FIREBASE_PRIVATE_KEY=<private_key from service account JSON>
 ```
 
-For `FIREBASE_PRIVATE_KEY`, paste the full value including:
+Or provide the complete service-account JSON as:
 
 ```text
------BEGIN PRIVATE KEY-----
-...
------END PRIVATE KEY-----
+FIREBASE_SERVICE_ACCOUNT_JSON={...}
 ```
 
-Vercel supports multiline environment values. The code also accepts a value containing literal `\n` sequences.
+Never commit a Firebase service-account private key to GitHub.
 
-Alternatively set a single `FIREBASE_SERVICE_ACCOUNT_JSON` environment variable to the complete downloaded JSON document.
+## Admin PIN setup
 
-**Never commit the service-account JSON or private key to GitHub.**
-
-### 3. Optional admin PIN
-
-In Vercel add:
+In Vercel -> Project -> Settings -> Environment Variables:
 
 ```text
 ADMIN_PIN=your-pin
 ```
 
-Then redeploy.
-
-## How remote switching works
+Recommended:
 
 ```text
-/admin
-  -> POST /api/mirror-state
-  -> ADMIN_PIN checked on Vercel
-  -> Firebase Admin writes /gocreatemirror/state
-  -> Firebase Realtime Database pushes the new value
-  -> Pi changes layout immediately
+ADMIN_SESSION_SECRET=a-long-random-secret-value
 ```
 
-The Pi has a normal API polling fallback in case the Firebase websocket cannot connect.
+Redeploy after setting these values.
 
-## Automatic code deployment detection
+After that:
 
-The mirror separately checks `/api/version` every 15 seconds. When Vercel moves production to a new deployment, the mirror shows an update message and reloads into the new build. This is independent of Firebase layout switching.
+```text
+https://gocreatemirror.vercel.app/admin
+```
+
+redirects to:
+
+```text
+/admin/login
+```
+
+until a valid PIN session exists.
+
+To lock the admin browser again immediately, click **Lock admin** in the top-right corner.
+
+## Development
+
+Requires Node 22+.
+
+```bash
+npm install
+npm run dev
+```
+
+Then open:
+
+```text
+http://localhost:3000          mirror
+http://localhost:3000/admin    screen studio
+```
+
+For local development, create `.env.local` from `.env.example`.
+
+Without Firebase Admin credentials, the project uses an in-process fallback for admin development. That fallback is not reliable across Vercel server instances; production should use Firebase Admin.
 
 ## Raspberry Pi
 
-For an already configured Pi pointing at `https://gocreatemirror.vercel.app`, no Pi changes are required. Deploy this version to the same Vercel domain.
+If your Pi is already opening:
 
-For a fresh Pi with Raspberry Pi OS 64-bit Desktop:
+```text
+https://gocreatemirror.vercel.app
+```
+
+**nothing needs to change on the Pi.** Deploy v4 to the same Vercel project. The old mirror build will detect the new deployment and reload.
+
+For a new Raspberry Pi OS 64-bit Desktop installation:
 
 ```bash
 bash setup-gocreatemirror.sh
 ```
 
-Default rotation is 90 degrees. If the monitor is upside down:
+The setup script installs Chromium kiosk mode, disables blanking, enables autologin, rotates the display to portrait, opens the production site, and reboots.
+
+If the monitor is mounted the opposite portrait direction:
 
 ```bash
 bash setup-gocreatemirror.sh 270
 ```
 
-## Useful files
+## Important files
 
 ```text
-app/admin/page.tsx             remote control UI
-app/api/mirror-state/route.ts  secure state API
-components/MirrorDashboard.tsx mirror + Firebase realtime subscription
-lib/firebase-client.ts         browser realtime subscription
-lib/firebase-config.ts         jollytiles web configuration
-lib/mirror-store.ts            Firebase Admin reads/writes
-database.rules.json            recommended RTDB rules
-lib/layouts.ts                 available UI layouts
-app/globals.css                mirror + admin styling
+app/admin/login/page.tsx             PIN-first admin login
+app/admin/page.tsx                   protected admin entry
+components/admin/AdminStudio.tsx     Live View + library + custom screens
+components/admin/ScreenEditor.tsx    full custom editor
+components/ScreenRenderer.tsx        generic mirror rendering engine
+lib/templates.ts                     20-screen design library
+lib/widget-catalog.ts                widget catalog/defaults
+lib/screen-types.ts                  screen/widget schema
+lib/mirror-store.ts                  Firebase state + custom screen storage
+lib/admin-auth.ts                    signed admin session
+app/api/admin/*                      protected admin APIs
+app/api/calendar/route.ts            public iCal proxy/parser
+app/api/weather/route.ts             live weather proxy
+database.rules.json                  Firebase RTDB rules
+setup-gocreatemirror.sh              one-shot Pi setup
 ```
+
+## Notes on screen size
+
+The editor and renderer use a fixed **1080 × 1920** logical canvas because that is the intended portrait display resolution. The renderer scales the canvas to the actual browser viewport, so it also previews correctly on laptops and phones.
