@@ -1,0 +1,17 @@
+[Unit]
+Description=GoCreateMirror AI and hardware companion
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+SupplementaryGroups=audio,video,gpio
+EnvironmentFile=/etc/gocreatemirror/agent.env
+ExecStart=/opt/gocreatemirror-agent/venv/bin/python /opt/gocreatemirror-agent/gocreate_agent.py
+Restart=always
+RestartSec=3
+TimeoutStopSec=8
+
+[Install]
+WantedBy=multi-user.target

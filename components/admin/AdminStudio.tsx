@@ -7,6 +7,9 @@ import { ScreenRenderer } from "@/components/ScreenRenderer";
 import { cloneScreen, makeId, type MirrorState, type ScreenDefinition } from "@/lib/screen-types";
 import { TEMPLATE_LIBRARY } from "@/lib/templates";
 import { ScreenEditor, type EditorMode } from "./ScreenEditor";
+import { SystemPanel } from "./SystemPanel";
+import { TeamSchedulePanel } from "./TeamSchedulePanel";
+import { DEFAULT_TEAM_SCHEDULE } from "@/lib/team-schedule";
 
 type Bootstrap = {
   state: MirrorState;
@@ -22,6 +25,7 @@ const sampleRuntime = {
   now: new Date(),
   online: true,
   weather: { temperature: 72, apparent: 71, wind: 8, high: 78, low: 58, code: 1, label: "Mostly clear" },
+  teamSchedule: DEFAULT_TEAM_SCHEDULE,
 };
 
 function blankScreen(): ScreenDefinition {
@@ -39,7 +43,7 @@ function blankScreen(): ScreenDefinition {
 
 export function AdminStudio() {
   const router = useRouter();
-  const [tab, setTab] = useState<"live" | "library" | "custom">("live");
+  const [tab, setTab] = useState<"live" | "library" | "custom" | "team" | "system">("live");
   const [state, setState] = useState<MirrorState | null>(null);
   const [screens, setScreens] = useState<ScreenDefinition[]>([]);
   const [persistent, setPersistent] = useState<boolean | null>(null);
@@ -139,7 +143,7 @@ export function AdminStudio() {
   return <main className="admin-studio">
     <header className="admin-studio-header">
       <div className="admin-brand"><Image src="/brand/gocreate-icon.png" alt="" width={42} height={40}/><div><b>GoCreateMirror</b><span>SCREEN STUDIO</span></div></div>
-      <nav><button className={tab === "live" ? "active" : ""} onClick={() => setTab("live")}>Live View</button><button className={tab === "library" ? "active" : ""} onClick={() => setTab("library")}>Screen Library <em>{TEMPLATE_LIBRARY.length}</em></button><button className={tab === "custom" ? "active" : ""} onClick={() => setTab("custom")}>Custom Screens <em>{screens.length}</em></button></nav>
+      <nav><button className={tab === "live" ? "active" : ""} onClick={() => setTab("live")}>Live View</button><button className={tab === "library" ? "active" : ""} onClick={() => setTab("library")}>Screen Library <em>{TEMPLATE_LIBRARY.length}</em></button><button className={tab === "custom" ? "active" : ""} onClick={() => setTab("custom")}>Custom Screens <em>{screens.length}</em></button><button className={tab === "team" ? "active" : ""} onClick={() => setTab("team")}>Team Schedule</button><button className={tab === "system" ? "active" : ""} onClick={() => setTab("system")}>AI + Hardware</button></nav>
       <div className="admin-head-actions"><span className={persistent ? "store-ok" : "store-warn"}><i/>{persistent ? "FIREBASE LIVE" : "LOCAL FALLBACK"}</span><button onClick={logout}>Lock admin</button></div>
     </header>
 
@@ -160,5 +164,9 @@ export function AdminStudio() {
       <div className="library-hero"><div><span className="admin-kicker">CUSTOM SCREENS</span><h1>Your saved designs.</h1><p>Build as many screens as you want. Edit, duplicate, publish, or start from any library template.</p></div><button className="primary" onClick={() => setEditor({ screen: blankScreen(), mode: "new" })}>+ New screen</button></div>
       {!screens.length ? <div className="empty-custom"><Image src="/brand/gocreate-icon.png" alt="" width={90} height={86}/><h2>No custom screens yet.</h2><p>Start blank, or open any design from the Screen Library and choose “Edit copy”.</p><button onClick={() => setTab("library")}>Browse library</button></div> : <div className="template-grid custom-grid">{screens.map((screen) => <article className={`template-card ${state?.selected.kind === "custom" && state.selected.id === screen.id ? "is-live" : ""}`} key={screen.id}><div className="template-preview"><ScreenRenderer screen={screen} runtime={sampleRuntime}/>{state?.selected.kind === "custom" && state.selected.id === screen.id && <span className="live-pill">LIVE</span>}</div><div className="template-copy"><div><span>{screen.category || "Custom"}</span><h2>{screen.name}</h2><p>{screen.description || "Custom GoCreateMirror screen"}</p></div><div className="template-actions"><button className="primary" onClick={() => goLive("custom", screen.id)}>Go Live</button><button onClick={() => setEditor({ screen: cloneScreen(screen), mode: "custom" })}>Edit</button><button className="icon-danger" onClick={() => deleteCustom(screen.id)}>Delete</button></div></div></article>)}</div>}
     </section>}
+
+    {tab === "team" && <TeamSchedulePanel onSessionExpired={() => { router.replace("/admin/login"); router.refresh(); }}/>}
+
+    {tab === "system" && <SystemPanel onSessionExpired={() => { router.replace("/admin/login"); router.refresh(); }}/>}
   </main>;
 }

@@ -7,8 +7,26 @@
         ".read": true,
         ".write": false
       },
+      "assistant": {
+        ".read": true,
+        ".write": false
+      },
+      "device": {
+        "status": {
+          ".read": true,
+          ".write": false
+        }
+      },
+      "settings": {
+        ".read": true,
+        ".write": false
+      },
       "screens": {
         ".read": false,
+        ".write": false
+      },
+      "teamSchedule": {
+        ".read": true,
         ".write": false
       }
     }

@@ -156,6 +156,7 @@ while true; do
     --disable-session-crashed-bubble \\
     --disable-features=Translate,TranslateUI \\
     --disable-notifications \\
+    --autoplay-policy=no-user-gesture-required \\
     --disable-pinch \\
     --overscroll-history-navigation=0 \\
     --password-store=basic \\
@@ -194,6 +195,27 @@ Timezone: $TIMEZONE
 Launcher: $LAUNCHER
 Autostart: $AUTOSTART
 INFO_EOF
+
+# Install the optional AI + camera + distance-sensor companion before rebooting.
+if [[ "${INSTALL_AI_HARDWARE:-1}" == "1" ]]; then
+  log "Installing Go AI + hardware companion..."
+  THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  AI_INSTALLER=""
+  if [[ -f "$THIS_DIR/scripts/install-ai-hardware.sh" ]]; then
+    AI_INSTALLER="$THIS_DIR/scripts/install-ai-hardware.sh"
+  elif [[ -f "$THIS_DIR/install-ai-hardware.sh" ]]; then
+    AI_INSTALLER="$THIS_DIR/install-ai-hardware.sh"
+  else
+    AI_INSTALLER="$(mktemp)"
+    if ! curl -fsSL "$MIRROR_URL/pi/install-ai-hardware.sh" -o "$AI_INSTALLER"; then
+      warn "Could not download AI companion installer; kiosk setup will still finish."
+      AI_INSTALLER=""
+    fi
+  fi
+  if [[ -n "$AI_INSTALLER" ]]; then
+    MIRROR_URL="$MIRROR_URL" MIRROR_DEVICE_TOKEN="${MIRROR_DEVICE_TOKEN:-}" bash "$AI_INSTALLER" || warn "AI/hardware companion setup failed; kiosk itself is still configured."
+  fi
+fi
 
 log "Setup complete."
 printf '%s\n' \

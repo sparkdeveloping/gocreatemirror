@@ -59,7 +59,7 @@ export function hasPersistentMirrorStore() {
   return Boolean(serviceAccountFromEnv());
 }
 
-function adminApp(): App {
+export function getAdminFirebaseApp(): App {
   if (getApps().length) return getApp();
   const account = serviceAccountFromEnv();
   if (!account) throw new Error("Firebase Admin credentials are not configured.");
@@ -113,7 +113,7 @@ async function publicRead(): Promise<MirrorState | null> {
 export async function readMirrorState(): Promise<MirrorState> {
   if (hasPersistentMirrorStore()) {
     try {
-      const snapshot = await getDatabase(adminApp()).ref(FIREBASE_MIRROR_STATE_PATH).get();
+      const snapshot = await getDatabase(getAdminFirebaseApp()).ref(FIREBASE_MIRROR_STATE_PATH).get();
       const state = normalizeState(snapshot.val());
       if (state) return state;
     } catch (error) {
@@ -133,7 +133,7 @@ export async function readMirrorState(): Promise<MirrorState> {
 async function persistState(next: MirrorState) {
   memoryStore().state = cloneState(next);
   if (hasPersistentMirrorStore()) {
-    await getDatabase(adminApp()).ref(FIREBASE_MIRROR_STATE_PATH).set(next);
+    await getDatabase(getAdminFirebaseApp()).ref(FIREBASE_MIRROR_STATE_PATH).set(next);
   }
 }
 
@@ -167,7 +167,7 @@ export async function listCustomScreens(): Promise<ScreenDefinition[]> {
   if (!hasPersistentMirrorStore()) {
     return Object.values(memoryStore().screens).map(cloneScreen);
   }
-  const snapshot = await getDatabase(adminApp()).ref(FIREBASE_MIRROR_SCREENS_PATH).get();
+  const snapshot = await getDatabase(getAdminFirebaseApp()).ref(FIREBASE_MIRROR_SCREENS_PATH).get();
   const raw = snapshot.val() as Record<string, unknown> | null;
   if (!raw) return [];
   return Object.values(raw).filter(isScreenDefinition).map(cloneScreen);
@@ -180,7 +180,7 @@ function safeKey(id: string) {
 export async function getCustomScreen(id: string): Promise<ScreenDefinition | null> {
   const key = safeKey(id);
   if (!hasPersistentMirrorStore()) return memoryStore().screens[key] ? cloneScreen(memoryStore().screens[key]) : null;
-  const snapshot = await getDatabase(adminApp()).ref(`${FIREBASE_MIRROR_SCREENS_PATH}/${key}`).get();
+  const snapshot = await getDatabase(getAdminFirebaseApp()).ref(`${FIREBASE_MIRROR_SCREENS_PATH}/${key}`).get();
   return isScreenDefinition(snapshot.val()) ? cloneScreen(snapshot.val()) : null;
 }
 
@@ -196,7 +196,7 @@ export async function saveCustomScreen(screen: ScreenDefinition): Promise<Screen
   };
   memoryStore().screens[key] = cloneScreen(next);
   if (hasPersistentMirrorStore()) {
-    await getDatabase(adminApp()).ref(`${FIREBASE_MIRROR_SCREENS_PATH}/${key}`).set(next);
+    await getDatabase(getAdminFirebaseApp()).ref(`${FIREBASE_MIRROR_SCREENS_PATH}/${key}`).set(next);
   }
   return next;
 }
@@ -205,7 +205,7 @@ export async function deleteCustomScreen(id: string) {
   const key = safeKey(id);
   delete memoryStore().screens[key];
   if (hasPersistentMirrorStore()) {
-    await getDatabase(adminApp()).ref(`${FIREBASE_MIRROR_SCREENS_PATH}/${key}`).remove();
+    await getDatabase(getAdminFirebaseApp()).ref(`${FIREBASE_MIRROR_SCREENS_PATH}/${key}`).remove();
   }
 }
 

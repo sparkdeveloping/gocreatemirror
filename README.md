@@ -1,270 +1,563 @@
-# GoCreateMirror v4 — Screen Studio
+# GoCreateMirror v6 — Team Pulse + Screen Studio + Go AI + Pi Hardware
 
-A remotely managed smart-mirror system for the GoCreate Raspberry Pi kiosk. The mirror itself remains a lightweight browser. The entire visual system is controlled from Next.js + Firebase Realtime Database.
+GoCreateMirror is a remotely managed 1080×1920 portrait smart mirror for a Raspberry Pi 3B+. The Raspberry Pi remains a lightweight kiosk; the Next.js application lives on Vercel and Firebase Realtime Database pushes visual state to the mirror.
 
-## What v4 adds
+v6 adds a structured **GoCreate weekly team schedule** layer on top of the v5 AI/hardware stack. The default mirror can now show who is on shift right now, who is coming in next, today’s roster and a full weekly schedule. The schedule is editable from `/admin` and updates the mirror in realtime.
 
-- **20 polished screen designs** across Signature, Minimal, Brand, Information, Productivity, Events, Media, Graphic, and Animated categories.
-- **Animated layouts** with glow, float, breathe, pulse, drift, fade, ticker, slide, and shimmer motion.
-- A true **Live View** at `/admin` showing exactly what the physical mirror is rendering.
-- **Edit Live View**: manually edit the active screen and publish it directly. Selecting any template or custom screen later intentionally overrides the manual Live View.
-- **Custom Screens**: create, save, edit, delete and publish unlimited custom layouts.
-- Full drag-and-drop **screen editor** built around the mirror's native 1080×1920 portrait canvas.
-- Widget positioning, width/height, rotation, scale, opacity, layer order, locking, animation, colors, borders, padding, glow and blur controls.
-- Image uploads are resized in-browser before being saved into a custom screen.
-- Admin login now happens **before `/admin` opens**. Enter the PIN once; a signed HTTP-only admin session remains valid for seven days.
-- Firebase Realtime Database still pushes the resolved live screen to the Pi immediately.
-- New Vercel deployments are detected automatically by the mirror and trigger a refresh.
+## What is in this project
 
-## Widget library
+### Mirror / Screen Studio
 
-The editor currently includes 27 widget types:
+- Portrait 1080×1920 mirror renderer.
+- 38 polished templates, including **Team Pulse / Default** and **Full Team Week** plus the AI/hardware screens.
+- `/admin` PIN gate with a signed HTTP-only 7-day session.
+- Live View, template library and persistent custom screens.
+- Full drag/resize/rotate/scale visual screen editor.
+- 35 widget types: clock, weather, calendar, image, video, web frame, text, facility status, logo, metrics, animated content, hardware widgets, plus **Who’s In Now**, **Coming Up**, **Today’s Team** and **Weekly Team Schedule**.
+- Firebase Realtime Database for instant screen switching.
+- Automatic Vercel deployment detection and browser refresh.
+- Logo/image glow is disabled by default and ignored for legacy `glow` values, so transparent brand assets render cleanly on the glass.
 
-- Clock
-- Date
-- Full weather
-- Standalone temperature
-- GoCreate open/closed status
-- Time-aware greeting
-- Text
-- Quote
-- Calendar / agenda
-- Countdown
-- Animated ticker / marquee
-- GoCreate studio grid
-- GoCreate logo / icon
-- Photo / image
-- Web iframe
-- Connection status
-- Custom metric
-- Badge
-- Divider
-- Shape
-- Wind speed
-- Feels-like temperature
-- Day progress
-- ISO week number
-- Video
-- Editable list
-- Progress bar
 
-### Calendar widget
+### Team schedule / staffing layer
 
-The Calendar widget accepts a public HTTPS iCal URL. For example, a public Google Calendar or Outlook ICS feed can be pasted into the widget inspector. The mirror proxies and caches that feed through `/api/calendar`.
+- Weekly roster transcribed from the schedule photo supplied on 2026-09-15.
+- `/admin -> Team Schedule` gives you a spreadsheet-style editor for names and all seven days.
+- Current staff is calculated from the configured `America/Chicago` time, including split shifts.
+- The **Who’s In Now** widget shows active staff and when each person leaves.
+- **Coming Up** shows the next scheduled arrivals.
+- **Today’s Team** shows every shift for the current day.
+- **Weekly Team Schedule** shows the complete week and highlights today automatically.
+- Team data lives at `/gocreatemirror/teamSchedule` in Firebase and can fall back to the bundled photo-seeded schedule if Firebase is unavailable.
+- Go AI receives the current/next staff context, so questions like “Hey Go, who’s in right now?” can be answered from the same schedule.
 
-### Photo widget
+### Go AI
 
-You can either paste an image URL or upload a photo from the admin editor. Uploaded images are resized to a maximum dimension of 1600px and JPEG-compressed before being stored with the screen definition. For large galleries, hosted image URLs are preferable.
+- Local wake phrase: **“Hey Go”**.
+- Wake recognition runs locally on the Pi using Vosk; it does not continuously stream room audio to the cloud.
+- After wake, the Pi records only the following question.
+- Groq Whisper endpoint for speech-to-text.
+- Groq LLM by default for general conversation and mirror-control commands.
+- Spoken replies use local `espeak-ng` on the Pi by default, so response TTS has no per-character API cost. Browser `speechSynthesis` remains available for admin-triggered/test speech.
+- Optional Gemini vision: say **“Hey Go, look at this…”** and the Pi Camera captures a single image for that request.
+- AI can switch templates/custom screens and perform selected live-screen edits such as adding text, changing text, resizing/rotating/styling widgets and removing a widget.
 
-## Admin behavior
+### Hardware layer
 
-### `/admin/login`
+- HC-SR04 distance sensing.
+- Presence-based mirror sleep/wake.
+- Pi Camera readiness and on-demand capture.
+- USB microphone input.
+- Raspberry Pi companion heartbeat in `/admin -> AI + Hardware`.
+- Hardware diagnostics and test commands.
+- Systemd service with automatic restart.
 
-Enter `ADMIN_PIN` once. The PIN is checked only on the server. The browser receives a signed HTTP-only cookie; JavaScript cannot read the session value.
-
-### `/admin`
-
-The admin application has three primary sections:
-
-1. **Live View** — exact screen currently rendered by the Pi.
-2. **Screen Library** — 20 ready-to-use designs. `Go Live` publishes immediately. `Edit copy` opens any template in the full editor.
-3. **Custom Screens** — your persistent user-created layouts.
-
-### Live View override model
-
-The server always stores one fully resolved `screen` object in Firebase:
+## Architecture
 
 ```text
-/gocreatemirror/state
+                   ┌────────────────────────────────────────┐
+                   │              VERCEL                    │
+                   │                                        │
+Admin browser ───► │ Next.js /admin Screen Studio          │
+                   │ /api/assistant/*                       │
+                   │ /api/device/*                          │
+                   └───────────────┬────────────────────────┘
+                                   │
+                         Firebase Realtime DB
+                                   │
+                   ┌───────────────▼────────────────────────┐
+                   │        Raspberry Pi 3B+                │
+                   │                                        │
+                   │ Chromium kiosk ─► mirror UI            │
+                   │                                        │
+                   │ gocreatemirror-agent.service           │
+                   │   ├─ USB microphone                    │
+                   │   ├─ Vosk “Hey Go”                     │
+                   │   ├─ HC-SR04 distance sensor           │
+                   │   └─ Pi Camera                         │
+                   └────────────────────────────────────────┘
 ```
 
-When you select a template:
+Voice flow:
 
 ```text
-Template -> resolved screen -> Firebase state -> Pi
+room audio
+   ↓
+LOCAL Vosk keyword recognition
+   ↓ only when “Hey Go” is detected
+question recording
+   ↓
+/api/assistant/transcribe → Groq Whisper
+   ↓
+/api/assistant/chat → Groq LLM
+   ↓
+Firebase assistant state
+   ↓
+mirror overlay + local espeak-ng audio
 ```
 
-When you select a saved custom screen:
+Camera flow is intentionally different:
 
 ```text
-Custom screen -> Firebase state -> Pi
+“Hey Go, look at this. What is it?”
+              ↓
+explicit visual-intent phrase detected
+              ↓
+Pi Camera captures ONE image
+              ↓
+Gemini vision (if configured)
+              ↓
+spoken + on-screen answer
 ```
 
-When you choose **Edit Live View**:
+The camera is not continuously uploaded or analyzed.
 
-```text
-Current live screen -> editor -> publish exact edited screen -> Firebase state -> Pi
-```
+---
 
-That manual screen is marked as `kind: live`. The next template/custom selection replaces it by design.
 
-Saved custom screens live privately at:
+# Team schedule quick start
 
-```text
-/gocreatemirror/screens/{screen-id}
-```
-
-The supplied Firebase rules allow public read access only to the resolved live state. Saved custom designs remain inaccessible through the browser Firebase SDK.
-
-## Firebase setup
-
-The client configuration already contains the Firebase web settings supplied for the `jollytiles` project. The web API key is not an admin credential.
-
-### 1. Make sure Realtime Database is active
-
-Firebase Console -> Build -> Realtime Database.
-
-If the old `jollytiles` database is deactivated, re-enable it or create an active Realtime Database instance. Copy the **exact database URL Firebase shows**.
-
-Set that URL in Vercel for both:
-
-```text
-FIREBASE_DATABASE_URL=<exact URL>
-NEXT_PUBLIC_FIREBASE_DATABASE_URL=<exact URL>
-```
-
-### 2. Rules
-
-Firebase Console -> Realtime Database -> Rules, paste `database.rules.json`:
-
-```json
-{
-  "rules": {
-    ".read": false,
-    ".write": false,
-    "gocreatemirror": {
-      "state": {
-        ".read": true,
-        ".write": false
-      },
-      "screens": {
-        ".read": false,
-        ".write": false
-      }
-    }
-  }
-}
-```
-
-The Vercel server uses Firebase Admin and can still write despite these browser rules.
-
-### 3. Firebase Admin credentials
-
-Firebase Console -> Project Settings -> Service accounts -> Generate new private key.
-
-In Vercel add:
-
-```text
-FIREBASE_PROJECT_ID=jollytiles
-FIREBASE_DATABASE_URL=<exact active RTDB URL>
-FIREBASE_CLIENT_EMAIL=<client_email from service account JSON>
-FIREBASE_PRIVATE_KEY=<private_key from service account JSON>
-```
-
-Or provide the complete service-account JSON as:
-
-```text
-FIREBASE_SERVICE_ACCOUNT_JSON={...}
-```
-
-Never commit a Firebase service-account private key to GitHub.
-
-## Admin PIN setup
-
-In Vercel -> Project -> Settings -> Environment Variables:
-
-```text
-ADMIN_PIN=your-pin
-```
-
-Recommended:
-
-```text
-ADMIN_SESSION_SECRET=a-long-random-secret-value
-```
-
-Redeploy after setting these values.
-
-After that:
+After deploying v6, open:
 
 ```text
 https://gocreatemirror.vercel.app/admin
 ```
 
-redirects to:
+Enter your admin PIN once, then open **Team Schedule**. The photo-seeded roster is already present as the fallback. Review/edit it and press **Save schedule** once to persist it into Firebase.
 
-```text
-/admin/login
-```
+The Screen Library contains:
 
-until a valid PIN session exists.
+- **Team Pulse / Default** — current team + next arrivals + today’s roster while preserving a large reflection area.
+- **Full Team Week** — the complete Monday–Sunday schedule.
 
-To lock the admin browser again immediately, click **Lock admin** in the top-right corner.
+If the mirror already has an older screen selected in Firebase, deployment will not forcibly replace that live selection. Choose **Team Pulse / Default → Go Live** once from the Screen Library. After that it behaves like any other remotely selected screen.
 
-## Development
+All four schedule widgets can also be added to any custom screen and moved, resized, rotated, recolored and animated in Screen Studio.
 
-Requires Node 22+.
+---
+
+# 1. Web application setup
+
+## Node
+
+Use Node 22+.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Then open:
+Open:
 
 ```text
-http://localhost:3000          mirror
-http://localhost:3000/admin    screen studio
+http://localhost:3000
+http://localhost:3000/admin
 ```
 
-For local development, create `.env.local` from `.env.example`.
+## Firebase
 
-Without Firebase Admin credentials, the project uses an in-process fallback for admin development. That fallback is not reliable across Vercel server instances; production should use Firebase Admin.
+The supplied browser config targets your `jollytiles` Firebase project. Make sure Realtime Database is active and copy its exact database URL.
 
-## Raspberry Pi
+Deploy `database.rules.json` or paste it into Firebase Console -> Realtime Database -> Rules.
 
-If your Pi is already opening:
+The rules allow public read access only to the data the physical mirror needs:
+
+- `/gocreatemirror/state`
+- `/gocreatemirror/assistant`
+- `/gocreatemirror/device/status`
+- `/gocreatemirror/settings`
+- `/gocreatemirror/teamSchedule`
+
+Saved custom screens remain private to Firebase Admin.
+
+## Vercel environment variables
+
+Start from `.env.example`.
+
+Required for persistent admin/screen control:
 
 ```text
-https://gocreatemirror.vercel.app
+ADMIN_PIN=your-pin
+ADMIN_SESSION_SECRET=a-long-random-secret
+
+FIREBASE_PROJECT_ID=jollytiles
+FIREBASE_DATABASE_URL=<exact active RTDB URL>
+FIREBASE_CLIENT_EMAIL=<service-account client_email>
+FIREBASE_PRIVATE_KEY=<service-account private_key>
+
+NEXT_PUBLIC_FIREBASE_DATABASE_URL=<same exact active RTDB URL>
 ```
 
-**nothing needs to change on the Pi.** Deploy v4 to the same Vercel project. The old mirror build will detect the new deployment and reload.
+### Device authentication
 
-For a new Raspberry Pi OS 64-bit Desktop installation:
+Generate a strong random value, for example:
 
 ```bash
-bash setup-gocreatemirror.sh
+openssl rand -hex 24
 ```
 
-The setup script installs Chromium kiosk mode, disables blanking, enables autologin, rotates the display to portrait, opens the production site, and reboots.
-
-If the monitor is mounted the opposite portrait direction:
-
-```bash
-bash setup-gocreatemirror.sh 270
-```
-
-## Important files
+Set it in Vercel:
 
 ```text
-app/admin/login/page.tsx             PIN-first admin login
-app/admin/page.tsx                   protected admin entry
-components/admin/AdminStudio.tsx     Live View + library + custom screens
-components/admin/ScreenEditor.tsx    full custom editor
-components/ScreenRenderer.tsx        generic mirror rendering engine
-lib/templates.ts                     20-screen design library
-lib/widget-catalog.ts                widget catalog/defaults
-lib/screen-types.ts                  screen/widget schema
-lib/mirror-store.ts                  Firebase state + custom screen storage
-lib/admin-auth.ts                    signed admin session
-app/api/admin/*                      protected admin APIs
-app/api/calendar/route.ts            public iCal proxy/parser
-app/api/weather/route.ts             live weather proxy
-database.rules.json                  Firebase RTDB rules
-setup-gocreatemirror.sh              one-shot Pi setup
+MIRROR_DEVICE_TOKEN=<random value>
 ```
 
-## Notes on screen size
+The same value must be in `/etc/gocreatemirror/agent.env` on the Pi. This protects the LLM/STT endpoints from arbitrary internet use.
 
-The editor and renderer use a fixed **1080 × 1920** logical canvas because that is the intended portrait display resolution. The renderer scales the canvas to the actual browser viewport, so it also previews correctly on laptops and phones.
+### Voice AI
+
+Default provider:
+
+```text
+AI_PROVIDER=groq
+GROQ_API_KEY=<your Groq API key>
+GROQ_STT_MODEL=whisper-large-v3-turbo
+GROQ_LLM_MODEL=openai/gpt-oss-20b
+```
+
+The models are environment-configurable so the app does not depend on a hard-coded provider model forever.
+
+### Optional camera vision
+
+```text
+GEMINI_API_KEY=<your Gemini API key>
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_VISION_MODEL=gemini-2.5-flash
+```
+
+Without a Gemini key, everything except visual understanding still works.
+
+Redeploy after changing Vercel environment variables.
+
+---
+
+# 2. Raspberry Pi setup
+
+Target: Raspberry Pi 3B+ running Raspberry Pi OS 64-bit with Desktop.
+
+## Fresh Pi: one setup script
+
+From this project on the Pi:
+
+```bash
+MIRROR_DEVICE_TOKEN='THE-SAME-TOKEN-AS-VERCEL' bash setup-gocreatemirror.sh
+```
+
+The script configures:
+
+- OS updates
+- Chromium kiosk
+- portrait rotation
+- desktop autologin
+- screen blanking disabled
+- SSH
+- GoCreateMirror website
+- microphone/GPIO/camera dependencies
+- local Vosk model
+- GoCreateMirror companion service
+- automatic startup/restart
+
+Default portrait rotation is 90°. If the monitor is upside down:
+
+```bash
+MIRROR_DEVICE_TOKEN='THE-SAME-TOKEN-AS-VERCEL' bash setup-gocreatemirror.sh 270
+```
+
+## Existing mirror: only add the AI/hardware service
+
+```bash
+MIRROR_DEVICE_TOKEN='THE-SAME-TOKEN-AS-VERCEL' bash scripts/install-ai-hardware.sh
+```
+
+Then either reboot or check:
+
+```bash
+sudo systemctl status gocreatemirror-agent
+journalctl -u gocreatemirror-agent -f
+```
+
+The installer uses GPIO23 for TRIG and GPIO24 for ECHO by default. Override before running if desired:
+
+```bash
+HC_SR04_TRIGGER_PIN=17 \
+HC_SR04_ECHO_PIN=27 \
+MIRROR_DEVICE_TOKEN='...' \
+bash scripts/install-ai-hardware.sh
+```
+
+---
+
+# 3. HC-SR04 wiring — read this before connecting it
+
+**The Raspberry Pi GPIO is 3.3V only. The HC-SR04 ECHO pin outputs approximately 5V. Do not connect ECHO directly to a Pi GPIO.**
+
+Recommended default wiring:
+
+```text
+HC-SR04                      Raspberry Pi 3B+
+--------                     ----------------
+VCC     ------------------>  5V
+GND     ------------------>  GND
+TRIG    ------------------>  GPIO23 / physical pin 16
+
+ECHO ----[ 1 kΩ ]----+---->  GPIO24 / physical pin 18
+                     |
+                   [ 2 kΩ ]
+                     |
+                     +---->  GND
+```
+
+The 1k/2k resistor divider reduces the ~5V ECHO signal to about 3.3V.
+
+See `docs/WIRING.md` for additional detail.
+
+---
+
+# 4. Pi Camera
+
+Connect the Raspberry Pi Camera to the CSI connector while the Pi is powered off.
+
+The companion service uses Picamera2. It does not keep the camera continuously streaming to the server. A camera is opened when an explicit visual question requires a capture, then closed again.
+
+Test:
+
+```bash
+sudo systemctl stop gocreatemirror-agent
+/opt/gocreatemirror-agent/venv/bin/python /opt/gocreatemirror-agent/gocreate_agent.py --test camera
+sudo systemctl start gocreatemirror-agent
+```
+
+A successful test writes:
+
+```text
+~/gocreatemirror-camera-test.jpg
+```
+
+---
+
+# 5. Microphone and “Hey Go”
+
+The installer adds a small English Vosk model to:
+
+```text
+/opt/gocreatemirror-agent/models/vosk-model-small-en-us-0.15
+```
+
+The wake detector runs locally at 16 kHz and watches for the phrase configured in:
+
+```text
+/admin -> AI + Hardware -> Wake Phrase
+```
+
+Default:
+
+```text
+hey go
+```
+
+Test microphone:
+
+```bash
+sudo systemctl stop gocreatemirror-agent
+/opt/gocreatemirror-agent/venv/bin/python /opt/gocreatemirror-agent/gocreate_agent.py --test mic
+sudo systemctl start gocreatemirror-agent
+```
+
+Test wake recognition:
+
+```bash
+sudo systemctl stop gocreatemirror-agent
+/opt/gocreatemirror-agent/venv/bin/python /opt/gocreatemirror-agent/gocreate_agent.py --test wake
+sudo systemctl start gocreatemirror-agent
+```
+
+If the wrong microphone is selected, set `AUDIO_INPUT_DEVICE` in:
+
+```text
+/etc/gocreatemirror/agent.env
+```
+
+Use this to list ALSA devices:
+
+```bash
+arecord -l
+```
+
+---
+
+# 6. Presence behavior
+
+The distance daemon publishes approximately every few seconds while measuring locally more frequently.
+
+Admin settings include:
+
+- Presence on/off
+- far/presence threshold
+- sleep timeout
+- sleep style
+  - pure black
+  - tiny GoCreate icon
+  - dim live screen
+
+The mirror will not sleep while Go AI is listening/thinking/speaking.
+
+If the sensor/agent goes offline, the web UI deliberately stops enforcing presence sleep rather than accidentally leaving the mirror black forever.
+
+Test sensor:
+
+```bash
+sudo systemctl stop gocreatemirror-agent
+/opt/gocreatemirror-agent/venv/bin/python /opt/gocreatemirror-agent/gocreate_agent.py --test sensor
+sudo systemctl start gocreatemirror-agent
+```
+
+---
+
+# 7. AI screen control
+
+When `Allow AI screen control` is enabled, the LLM may return a constrained action list. Supported actions are intentionally limited to mirror operations, not arbitrary shell access.
+
+Examples:
+
+```text
+“Hey Go, switch to Go AI Halo.”
+“Hey Go, switch to the Sensor Lab screen.”
+“Hey Go, make the clock 20 percent bigger.”
+“Hey Go, rotate the logo 10 degrees.”
+“Hey Go, add the words Welcome Makers near the middle.”
+“Hey Go, remove the quote.”
+```
+
+The server can execute:
+
+- activate template
+- activate custom screen
+- update text
+- add text
+- remove widget
+- change scale / rotation / font size / color / opacity
+
+The AI never receives shell access to the Raspberry Pi.
+
+---
+
+# 8. Admin AI + Hardware page
+
+After logging into `/admin`, open **AI + Hardware**.
+
+It displays:
+
+- Pi agent online/offline
+- current distance
+- presence state
+- wake engine readiness
+- microphone readiness
+- Pi Camera readiness
+- Groq configuration
+- Gemini vision configuration
+- current AI phase/transcript/reply
+
+It also lets you configure behavior and send test listening/speech overlays to the physical mirror.
+
+---
+
+# 9. New hardware widgets
+
+The normal Screen Studio now includes:
+
+- **Distance Sensor** — current HC-SR04 reading in cm
+- **Presence** — person-near / area-clear state
+- **Go AI Status** — idle/listening/thinking/speaking/error
+- **Camera Status** — camera-ready/offline indicator
+
+These can be placed, scaled, rotated and animated like every other widget.
+
+New templates:
+
+- Go AI Halo
+- Sensor Lab
+- Voice Welcome
+- Vision Bench
+
+---
+
+# 10. Privacy / security design
+
+- Wake phrase recognition is local.
+- Room audio is not continuously sent to a cloud service.
+- Only the post-wake question is sent for transcription.
+- Camera capture requires an explicit visual-intent phrase.
+- Firebase browser writes are disabled by Security Rules.
+- Firebase Admin credentials stay only in Vercel.
+- Groq/Gemini keys stay only in Vercel.
+- The Pi has only a separate `MIRROR_DEVICE_TOKEN`.
+- AI mirror tools are allow-listed and do not execute shell commands.
+- Admin PIN becomes an HTTP-only session cookie; you do not repeatedly transmit a PIN on every update.
+
+Because `/gocreatemirror/assistant` is readable by the physical web client, a short-lived transcript can be visible in Realtime Database while an interaction is active. The companion clears it after the response finishes. If this installation will handle sensitive conversations, disable `Show transcript` and consider putting the mirror UI behind stronger device-specific authentication.
+
+---
+
+# Project map
+
+```text
+app/
+  admin/                         admin login + studio
+  api/
+    admin/                       authenticated screen/system management
+    assistant/
+      chat/                      LLM + vision + mirror tools
+      state/                     current voice overlay state
+      transcribe/                Groq Whisper proxy
+    device/
+      config/                    Pi configuration
+      status/                    Pi heartbeat/sensors
+
+components/
+  AssistantOverlay.tsx          mirror listening/thinking/speaking UI
+  MirrorDashboard.tsx           realtime mirror shell
+  ScreenRenderer.tsx            all widgets + editor renderer
+  admin/
+    AdminStudio.tsx
+    ScreenEditor.tsx
+    SystemPanel.tsx              AI/hardware control center
+
+hardware/pi/
+  gocreate_agent.py             Raspberry Pi companion daemon
+  requirements.txt
+
+lib/
+  assistant-engine.ts           LLM + constrained mirror actions
+  device-auth.ts
+  device-store.ts
+  device-types.ts
+  mirror-store.ts
+  screen-types.ts
+  templates.ts
+  widget-catalog.ts
+
+scripts/
+  install-ai-hardware.sh
+  install-kiosk.sh
+
+setup-gocreatemirror.sh         fresh-Pi one-shot installer
+```
+
+## Commands
+
+```bash
+npm run typecheck
+npm run build
+```
+
+Pi logs:
+
+```bash
+journalctl -u gocreatemirror-agent -f
+```
+
+Kiosk logs:
+
+```bash
+tail -f ~/.local/state/gocreatemirror/kiosk.log
+```

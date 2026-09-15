@@ -18,6 +18,10 @@ export const WIDGET_CATALOG: WidgetCatalogItem[] = [
   { type: "text", name: "Text", description: "Fully editable headline, label, or body copy.", group: "Content", glyph: "Aa" },
   { type: "quote", name: "Quote", description: "Statement block with subtle quote treatment.", group: "Content", glyph: "“ ”" },
   { type: "calendar", name: "Calendar", description: "Manual events or a public iCal feed.", group: "Content", glyph: "CAL" },
+  { type: "teamNow", name: "Who’s In Now", description: "Live roster of team members currently on shift.", group: "Content", glyph: "IN" },
+  { type: "teamNext", name: "Coming Up", description: "Next team members scheduled to arrive today.", group: "Content", glyph: "NEXT" },
+  { type: "teamToday", name: "Today’s Team", description: "Complete staff schedule for the current day.", group: "Content", glyph: "TODAY" },
+  { type: "teamWeek", name: "Weekly Team Schedule", description: "Full Monday–Sunday schedule, grouped for mirror readability.", group: "Content", glyph: "WEEK" },
   { type: "countdown", name: "Countdown", description: "Live days/hours/minutes to a date.", group: "Content", glyph: "T−" },
   { type: "marquee", name: "Ticker", description: "Animated scrolling announcements.", group: "Content", glyph: "→→" },
   { type: "studios", name: "Studios", description: "GoCreate studio names in a clean grid.", group: "Content", glyph: "6×" },
@@ -36,6 +40,10 @@ export const WIDGET_CATALOG: WidgetCatalogItem[] = [
   { type: "progress", name: "Progress", description: "Custom labeled progress bar from 0–100.", group: "Utility", glyph: "%" },
   { type: "divider", name: "Divider", description: "Fine horizontal or vertical line.", group: "Utility", glyph: "—" },
   { type: "shape", name: "Shape", description: "Rectangle, circle, pill or line accent.", group: "Utility", glyph: "◯" },
+  { type: "distance", name: "Distance Sensor", description: "Live HC-SR04 distance from the Pi companion.", group: "Utility", glyph: "CM" },
+  { type: "presence", name: "Presence", description: "Shows whether someone is currently near the mirror.", group: "Utility", glyph: "YOU" },
+  { type: "assistantStatus", name: "Go AI Status", description: "Idle, listening, thinking or speaking state.", group: "Utility", glyph: "AI" },
+  { type: "cameraStatus", name: "Camera Status", description: "Pi Camera readiness/privacy indicator.", group: "Utility", glyph: "CAM" },
 ];
 
 const base = (type: WidgetType, name: string): ScreenWidget => ({
@@ -101,7 +109,7 @@ export function createWidget(type: WidgetType): ScreenWidget {
     case "studios":
       return { ...widget, w: 760, h: 260, style: { ...widget.style, fontSize: 26, letterSpacing: 3 }, config: { variant: "grid" } };
     case "logo":
-      return { ...widget, w: 370, h: 120, style: { ...widget.style, glow: 10 }, config: { logoVariant: "color" } };
+      return { ...widget, w: 370, h: 120, style: { ...widget.style, glow: 0 }, config: { logoVariant: "color" } };
     case "image":
       return { ...widget, w: 500, h: 320, style: { ...widget.style, borderRadius: 22 }, config: { imageSrc: "", objectFit: "cover" } };
     case "iframe":
@@ -130,6 +138,22 @@ export function createWidget(type: WidgetType): ScreenWidget {
       return { ...widget, w: 500, h: 4, style: { ...widget.style, background: "rgba(98,204,255,.46)", borderRadius: 8 }, config: { variant: "horizontal" } };
     case "shape":
       return { ...widget, w: 260, h: 260, opacity: 0.28, style: { ...widget.style, background: "#00aef3", borderRadius: 999, glow: 20 }, config: { shape: "circle" } };
+    case "distance":
+      return { ...widget, w: 320, h: 125, style: { ...widget.style, fontSize: 52, fontWeight: 300 }, config: { text: "DISTANCE" } };
+    case "presence":
+      return { ...widget, w: 340, h: 90, style: { ...widget.style, fontSize: 24, letterSpacing: 3 }, config: { text: "PRESENCE" } };
+    case "assistantStatus":
+      return { ...widget, w: 340, h: 90, style: { ...widget.style, fontSize: 24, letterSpacing: 3 }, config: { text: "GO AI" } };
+    case "cameraStatus":
+      return { ...widget, w: 340, h: 90, style: { ...widget.style, fontSize: 24, letterSpacing: 3 }, config: { text: "CAMERA" } };
+    case "teamNow":
+      return { ...widget, w: 920, h: 330, style: { ...widget.style, fontSize: 30, background: "rgba(4,12,18,.46)", borderColor: "rgba(92,201,255,.18)", borderWidth: 1, borderRadius: 22, padding: 26 }, config: { scheduleTitle: "WHO’S IN NOW", scheduleMaxItems: 8, scheduleShowTimes: true, scheduleShowLabels: true } };
+    case "teamNext":
+      return { ...widget, w: 920, h: 250, style: { ...widget.style, fontSize: 27, background: "rgba(4,12,18,.40)", borderColor: "rgba(92,201,255,.14)", borderWidth: 1, borderRadius: 22, padding: 24 }, config: { scheduleTitle: "COMING UP", scheduleMaxItems: 6, scheduleShowTimes: true, scheduleShowLabels: true } };
+    case "teamToday":
+      return { ...widget, w: 920, h: 560, style: { ...widget.style, fontSize: 26, background: "rgba(4,12,18,.40)", borderColor: "rgba(92,201,255,.14)", borderWidth: 1, borderRadius: 22, padding: 24 }, config: { scheduleTitle: "TODAY’S TEAM", scheduleMaxItems: 16, scheduleShowTimes: true, scheduleShowLabels: true } };
+    case "teamWeek":
+      return { ...widget, w: 960, h: 1500, style: { ...widget.style, fontSize: 22, background: "rgba(3,9,14,.50)", borderColor: "rgba(92,201,255,.14)", borderWidth: 1, borderRadius: 24, padding: 24 }, config: { scheduleTitle: "WEEKLY TEAM SCHEDULE", scheduleShowTimes: true, scheduleShowLabels: true } };
     default:
       return widget;
   }

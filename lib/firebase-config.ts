@@ -12,3 +12,8 @@ export const FIREBASE_MIRROR_ROOT =
   process.env.NEXT_PUBLIC_FIREBASE_MIRROR_ROOT || "gocreatemirror";
 export const FIREBASE_MIRROR_STATE_PATH = `${FIREBASE_MIRROR_ROOT}/state`;
 export const FIREBASE_MIRROR_SCREENS_PATH = `${FIREBASE_MIRROR_ROOT}/screens`;
+
+export const FIREBASE_DEVICE_STATUS_PATH = `${FIREBASE_MIRROR_ROOT}/device/status`;
+export const FIREBASE_ASSISTANT_PATH = `${FIREBASE_MIRROR_ROOT}/assistant`;
+export const FIREBASE_SYSTEM_SETTINGS_PATH = `${FIREBASE_MIRROR_ROOT}/settings`;
+export const FIREBASE_TEAM_SCHEDULE_PATH = `${FIREBASE_MIRROR_ROOT}/teamSchedule`;

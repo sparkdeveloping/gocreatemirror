@@ -6,6 +6,8 @@ import { getFacilityStatus } from "@/lib/facility-hours";
 import { MIRROR_CONFIG } from "@/lib/mirror-config";
 import { CANVAS_HEIGHT, CANVAS_WIDTH, clamp, type CalendarEvent, type ScreenDefinition, type ScreenWidget } from "@/lib/screen-types";
 import type { WeatherData } from "@/lib/weather";
+import { DEFAULT_ASSISTANT_STATE, DEFAULT_DEVICE_STATUS, type AssistantState, type DeviceStatus } from "@/lib/device-types";
+import { DEFAULT_TEAM_SCHEDULE, TEAM_DAYS, dayForDate, formatShift, formatTime12, peopleInNow, scheduledToday, upcomingToday, type TeamDay, type TeamSchedule } from "@/lib/team-schedule";
 import { WeatherGlyph } from "./WeatherGlyph";
 
 export type RuntimeData = {
@@ -13,6 +15,9 @@ export type RuntimeData = {
   weather: WeatherData | null;
   weatherError?: boolean;
   online: boolean;
+  device?: DeviceStatus;
+  assistant?: AssistantState;
+  teamSchedule?: TeamSchedule;
 };
 
 type RendererProps = {
@@ -97,7 +102,7 @@ function widgetStyle(widget: ScreenWidget): CSSProperties {
     lineHeight: style.lineHeight,
     textAlign: style.textAlign,
     padding: style.padding,
-    boxShadow: style.shadow || (style.glow ? `0 0 ${style.glow * 2}px currentColor` : undefined),
+    boxShadow: style.shadow || (!["logo", "image", "video"].includes(widget.type) && style.glow ? `0 0 ${style.glow * 2}px currentColor` : undefined),
     backdropFilter: style.backdropBlur ? `blur(${style.backdropBlur}px)` : undefined,
   };
 }
@@ -133,6 +138,50 @@ function Countdown({ widget, now }: { widget: ScreenWidget; now: Date }) {
   const hours = Math.floor((diff % 86_400_000) / 3_600_000);
   const minutes = Math.floor((diff % 3_600_000) / 60_000);
   return <div className="widget-countdown"><div className="widget-eyebrow">{widget.config.countdownLabel || "COUNTDOWN"}</div><strong>{days}<small>D</small> {hours}<small>H</small> {minutes}<small>M</small></strong></div>;
+}
+
+
+function TeamScheduleWidget({ widget, runtime }: { widget: ScreenWidget; runtime: RuntimeData }) {
+  const schedule = runtime.teamSchedule || DEFAULT_TEAM_SCHEDULE;
+  const now = runtime.now;
+  const title = widget.config.scheduleTitle;
+  const max = widget.config.scheduleMaxItems || (widget.type === "teamNow" ? 8 : widget.type === "teamNext" ? 6 : 20);
+  const showTimes = widget.config.scheduleShowTimes !== false;
+  const showLabels = widget.config.scheduleShowLabels !== false;
+  const suffix = (label?: string) => showLabels && label ? <em>{label}</em> : null;
+
+  if (widget.type === "teamNow") {
+    const active = peopleInNow(schedule, now).slice(0, max);
+    return <div className="team-widget team-now">
+      <div className="team-widget-head"><span>{title || "WHO’S IN NOW"}</span><b>{active.length}</b></div>
+      {active.length ? <div className="team-now-grid">{active.map(({ member, segment }) => <div className="team-person" key={`${member.id}-${segment.start}`}><i/><div><strong>{member.name}</strong>{showTimes && <small>until {formatTime12(segment.end)}</small>}</div>{suffix(segment.label)}</div>)}</div> : <div className="team-empty">No one is scheduled in right now.</div>}
+    </div>;
+  }
+
+  if (widget.type === "teamNext") {
+    const next = upcomingToday(schedule, now).slice(0, max);
+    return <div className="team-widget team-next">
+      <div className="team-widget-head"><span>{title || "COMING UP"}</span><b>{dayForDate(now, schedule.timezone).toUpperCase()}</b></div>
+      {next.length ? <div className="team-next-list">{next.map(({ member, segment }) => <div key={`${member.id}-${segment.start}`}><time>{formatTime12(segment.start)}</time><strong>{member.name}</strong>{suffix(segment.label)}</div>)}</div> : <div className="team-empty">No more scheduled arrivals today.</div>}
+    </div>;
+  }
+
+  if (widget.type === "teamToday") {
+    const today = scheduledToday(schedule, now).slice(0, max);
+    return <div className="team-widget team-today">
+      <div className="team-widget-head"><span>{title || "TODAY’S TEAM"}</span><b>{today.length} PEOPLE</b></div>
+      {today.length ? <div className="team-today-list">{today.map(({ member, segments }) => <div className="team-today-row" key={member.id}><strong>{member.name}</strong><div>{segments.map((segment, index) => <span key={`${segment.start}-${index}`}>{showTimes ? formatShift(segment, true) : segment.label || "Scheduled"}</span>)}</div></div>)}</div> : <div className="team-empty">No team shifts scheduled today.</div>}
+    </div>;
+  }
+
+  const currentDay = dayForDate(now, schedule.timezone);
+  return <div className="team-widget team-week">
+    <div className="team-widget-head"><span>{title || "WEEKLY TEAM SCHEDULE"}</span><b>{schedule.members.filter((member) => member.active !== false).length} TEAM</b></div>
+    <div className="team-week-days">{TEAM_DAYS.map((day) => {
+      const entries = schedule.members.filter((member) => member.active !== false && member.shifts[day].length).map((member) => ({ member, segments: member.shifts[day] }));
+      return <section className={day === currentDay ? "is-today" : ""} key={day}><header><strong>{day.slice(0, 3).toUpperCase()}</strong><small>{entries.length} scheduled</small></header><div>{entries.length ? entries.map(({ member, segments }) => <article key={member.id}><b>{member.name}</b><span>{showTimes ? segments.map((segment) => formatShift(segment, true)).join(" / ") : "Scheduled"}</span></article>) : <p>OFF / no shifts</p>}</div></section>;
+    })}</div>
+  </div>;
 }
 
 function WidgetContent({ widget, runtime }: { widget: ScreenWidget; runtime: RuntimeData }) {
@@ -171,6 +220,14 @@ function WidgetContent({ widget, runtime }: { widget: ScreenWidget; runtime: Run
     case "video": return widget.config.url ? <video className="widget-video" src={widget.config.url} autoPlay muted loop playsInline /> : <div className="widget-image-placeholder"><span>▶</span><small>ADD VIDEO URL</small></div>;
     case "list": return <div className="widget-list">{(widget.config.tickerItems || []).map((item, index) => <div key={`${item}-${index}`}><span>{String(index + 1).padStart(2, "0")}</span><b>{item}</b></div>)}</div>;
     case "progress": { const value = clamp(Number(widget.config.metricValue || 0), 0, 100); return <div className="widget-progress"><div><span>{widget.config.metricLabel || "PROGRESS"}</span><b>{value}{widget.config.metricSuffix || "%"}</b></div><i><em style={{ width: `${value}%` }}/></i></div>; }
+    case "distance": { const device = runtime.device || DEFAULT_DEVICE_STATUS; return <div className="widget-mini-metric"><small>{widget.config.text || "DISTANCE"}</small><strong>{device.distanceCm == null ? "—" : Math.round(device.distanceCm)}<em> CM</em></strong></div>; }
+    case "presence": { const device = runtime.device || DEFAULT_DEVICE_STATUS; return <div className={`widget-network ${device.presence ? "online" : "offline"}`}><i />{device.presence ? (device.proximity === "near" ? "PERSON NEAR" : "PRESENCE DETECTED") : "AREA CLEAR"}</div>; }
+    case "assistantStatus": { const ai = runtime.assistant || DEFAULT_ASSISTANT_STATE; return <div className={`widget-network ${ai.phase !== "error" ? "online" : "offline"}`}><i />{(widget.config.text || "GO AI")} · {ai.phase.toUpperCase()}</div>; }
+    case "cameraStatus": { const device = runtime.device || DEFAULT_DEVICE_STATUS; return <div className={`widget-network ${device.cameraReady ? "online" : "offline"}`}><i />{device.cameraReady ? "CAMERA READY" : "CAMERA OFFLINE"}</div>; }
+    case "teamNow":
+    case "teamNext":
+    case "teamToday":
+    case "teamWeek": return <TeamScheduleWidget widget={widget} runtime={runtime}/>;
     case "divider": return <div className="widget-divider"/>;
     case "shape": return <div className="widget-shape"/>;
     case "iframe": return <iframe className="widget-frame" src={widget.config.url || "about:blank"} title={widget.name} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />;
@@ -194,7 +251,7 @@ function EditableWidget({ widget, runtime, scale, selected, onSelect, onMove }: 
     drag.current = null; resize.current = null;
     try { event.currentTarget.releasePointerCapture(event.pointerId); } catch {}
   };
-  return <div className={`screen-widget editor-widget ${selected ? "is-selected" : ""} anim-${widget.animation || "none"}`} style={widgetStyle(widget)} onPointerDown={(event) => { event.stopPropagation(); onSelect?.(widget.id); if (widget.locked) return; drag.current = { x: event.clientX, y: event.clientY, ox: widget.x, oy: widget.y }; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={movePointer} onPointerUp={end} onPointerCancel={end}><WidgetContent widget={widget} runtime={runtime}/>{selected && !widget.locked && <button className="resize-handle" aria-label="Resize" onPointerDown={(event) => { event.stopPropagation(); resize.current = { x: event.clientX, y: event.clientY, ow: widget.w, oh: widget.h }; event.currentTarget.parentElement?.setPointerCapture(event.pointerId); }} />}</div>;
+  return <div className={`screen-widget type-${widget.type} editor-widget ${selected ? "is-selected" : ""} anim-${widget.animation || "none"}`} style={widgetStyle(widget)} onPointerDown={(event) => { event.stopPropagation(); onSelect?.(widget.id); if (widget.locked) return; drag.current = { x: event.clientX, y: event.clientY, ox: widget.x, oy: widget.y }; event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={movePointer} onPointerUp={end} onPointerCancel={end}><WidgetContent widget={widget} runtime={runtime}/>{selected && !widget.locked && <button className="resize-handle" aria-label="Resize" onPointerDown={(event) => { event.stopPropagation(); resize.current = { x: event.clientX, y: event.clientY, ow: widget.w, oh: widget.h }; event.currentTarget.parentElement?.setPointerCapture(event.pointerId); }} />}</div>;
 }
 
 export function ScreenRenderer({ screen, runtime, className = "", editable = false, selectedId, onSelect, onMove, onScaleChange }: RendererProps) {
@@ -219,6 +276,6 @@ export function ScreenRenderer({ screen, runtime, className = "", editable = fal
     {screen.background.imageSrc && <div className="screen-bg-image" style={{ backgroundImage: `url(${screen.background.imageSrc})`, opacity: screen.background.imageOpacity ?? .35 }}/>} 
     {screen.background.ambientGlow && <div className="screen-ambient"/>}
     {screen.background.noise && <div className="screen-noise"/>}
-    {sorted.map((widget) => editable ? <EditableWidget key={widget.id} widget={widget} runtime={data} scale={scale} selected={selectedId === widget.id} onSelect={(id) => onSelect?.(id)} onMove={onMove}/> : <div key={widget.id} className={`screen-widget anim-${widget.animation || "none"}`} style={widgetStyle(widget)}><WidgetContent widget={widget} runtime={data}/></div>)}
+    {sorted.map((widget) => editable ? <EditableWidget key={widget.id} widget={widget} runtime={data} scale={scale} selected={selectedId === widget.id} onSelect={(id) => onSelect?.(id)} onMove={onMove}/> : <div key={widget.id} className={`screen-widget type-${widget.type} anim-${widget.animation || "none"}`} style={widgetStyle(widget)}><WidgetContent widget={widget} runtime={data}/></div>)}
   </div></div>;
 }

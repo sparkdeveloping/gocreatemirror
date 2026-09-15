@@ -29,6 +29,14 @@ export const WIDGET_TYPES = [
   "video",
   "list",
   "progress",
+  "distance",
+  "presence",
+  "assistantStatus",
+  "cameraStatus",
+  "teamNow",
+  "teamNext",
+  "teamToday",
+  "teamWeek",
 ] as const;
 
 export type WidgetType = (typeof WIDGET_TYPES)[number];
@@ -77,6 +85,10 @@ export type WidgetConfig = {
   showHighLow?: boolean;
   showCondition?: boolean;
   showLocation?: boolean;
+  scheduleTitle?: string;
+  scheduleMaxItems?: number;
+  scheduleShowTimes?: boolean;
+  scheduleShowLabels?: boolean;
 };
 
 export type WidgetStyle = {
