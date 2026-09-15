@@ -9,7 +9,9 @@ export const MIRROR_CONFIG = {
   location: process.env.NEXT_PUBLIC_MIRROR_LOCATION || "Wichita, KS",
   latitude: Number(process.env.NEXT_PUBLIC_MIRROR_LATITUDE || 37.7195),
   longitude: Number(process.env.NEXT_PUBLIC_MIRROR_LONGITUDE || -97.2934),
-  autoReloadMinutes: Number(process.env.NEXT_PUBLIC_AUTO_RELOAD_MINUTES || 10),
+  deployPollSeconds: Number(process.env.NEXT_PUBLIC_DEPLOY_POLL_SECONDS || 15),
+  statePollSeconds: Number(process.env.NEXT_PUBLIC_STATE_POLL_SECONDS || 5),
+  fallbackReloadMinutes: Number(process.env.NEXT_PUBLIC_FALLBACK_RELOAD_MINUTES || 60),
   brand: {
     yellow: "#FBBF11",
     blue: "#0499DB",
