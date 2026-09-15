@@ -8,6 +8,8 @@ type StateResponse = {
   layout: LayoutId;
   updatedAt: string;
   persistent: boolean;
+  realtime?: boolean;
+  store?: string;
   error?: string;
 };
 
@@ -83,9 +85,36 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
+    let active = true;
+    let unsubscribe: (() => void) | undefined;
+    let fallbackTimer: number | undefined;
+
     refresh();
-    const timer = window.setInterval(refresh, 5000);
-    return () => window.clearInterval(timer);
+
+    function startFallback() {
+      if (fallbackTimer) return;
+      fallbackTimer = window.setInterval(refresh, 5000);
+    }
+
+    import("@/lib/firebase-client")
+      .then(({ subscribeToMirrorState }) => {
+        if (!active) return;
+        unsubscribe = subscribeToMirrorState(
+          (state) => {
+            if (!active) return;
+            setCurrent(state.layout);
+            setMessage(`${LAYOUT_OPTIONS.find((item) => item.id === state.layout)?.name || state.layout} is live on the mirror.`);
+          },
+          () => startFallback(),
+        );
+      })
+      .catch(() => startFallback());
+
+    return () => {
+      active = false;
+      unsubscribe?.();
+      if (fallbackTimer) window.clearInterval(fallbackTimer);
+    };
   }, []);
 
   async function selectLayout(layout: LayoutId) {
@@ -104,7 +133,7 @@ export default function AdminPage() {
       if (!response.ok) throw new Error(data.error || "Could not change layout.");
       setCurrent(data.layout);
       setPersistent(data.persistent);
-      setMessage(`${LAYOUT_OPTIONS.find((item) => item.id === data.layout)?.name || data.layout} is live. The mirror polls for changes every few seconds.`);
+      setMessage(`${LAYOUT_OPTIONS.find((item) => item.id === data.layout)?.name || data.layout} is live. Firebase pushes the change to the mirror in realtime.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not change layout.");
     } finally {
@@ -124,15 +153,15 @@ export default function AdminPage() {
       </header>
 
       <section className="admin-statusbar">
-        <div className={`admin-live ${persistent ? "admin-live--ok" : "admin-live--warn"}`}><i /><span>{persistent ? "PERSISTENT REMOTE CONTROL" : "DEMO STATE ONLY"}</span></div>
+        <div className={`admin-live ${persistent ? "admin-live--ok" : "admin-live--warn"}`}><i /><span>{persistent ? "FIREBASE REALTIME CONNECTED" : "FIREBASE ADMIN SETUP NEEDED"}</span></div>
         <div className="admin-message">{message}</div>
         <label className="admin-pin">PIN <input type="password" inputMode="numeric" value={pin} onChange={(event: ChangeEvent<HTMLInputElement>) => setPin(event.target.value)} placeholder="optional" /></label>
       </section>
 
       {persistent === false && (
         <div className="admin-warning">
-          <strong>Remote switching needs one small persistent store.</strong>
-          <span>Connect Upstash Redis to this Vercel project and redeploy. The code already detects the environment variables automatically. Until then, state is only held in a server instance and is not reliable across requests.</span>
+          <strong>Realtime Database is connected for reads, but Vercel still needs permission to save changes.</strong>
+          <span>Add your Firebase service-account client email and private key to Vercel as FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY, then redeploy. The browser never receives those private credentials.</span>
         </div>
       )}
 
@@ -157,7 +186,7 @@ export default function AdminPage() {
 
       <footer className="admin-footer">
         <span>Auto deploy detection polls every 15 seconds by default.</span>
-        <span>/admin only controls layout; your mirror data continues running normally.</span>
+        <span>Layout changes are delivered through Firebase Realtime Database; deployment detection continues separately.</span>
       </footer>
     </main>
   );

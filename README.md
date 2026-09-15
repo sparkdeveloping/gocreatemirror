@@ -1,33 +1,18 @@
-# GoCreateMirror v2
+# GoCreateMirror v3 — Firebase Realtime
 
-Portrait smart-mirror UI for a Raspberry Pi 3B+ driving a 22/23-inch vertical display.
+Portrait smart-mirror UI for a Raspberry Pi 3B+ kiosk and a 22/23-inch vertical display.
 
-The Pi remains a thin kiosk client. Next.js runs on Vercel, so normal UI updates never require SSHing into the Pi.
-
-## What changed in v2
+## What is included
 
 - Five switchable mirror layouts at `/admin`
-- **Signature v2** tuned from the real mirror photo: larger clock, weather, status, and studio labels
-- **Twin Rails** for maximum clear reflection space
-- **Halo** centered-brand layout
-- **Studio Grid** for stronger makerspace visibility
-- **Icon Only** — just the GoCreate icon dead center on black glass
-- Mirror polls its remote layout state every 5 seconds
-- New Vercel deployments are detected automatically every 15 seconds and the mirror reloads itself
-- 60-minute full-reload fallback
-- Weather now goes through `/api/weather` on Vercel instead of directly from Chromium on the Pi
-- Last successful weather reading is cached in the browser as a fallback
-- Old service-worker registrations are removed so cached code cannot hold the mirror on an old deployment
+- **Firebase Realtime Database** for persistent remote layout state
+- Actual Firebase realtime subscriptions on the Pi and `/admin` — no normal state polling delay
+- Secure server-side admin writes through `firebase-admin`
+- Automatic Vercel deployment detection and refresh
+- Live weather proxy, facility hours, branding, and kiosk scripts
+- Icon-only mode with the GoCreate mark dead center
 
-## Routes
-
-- `/` — the actual mirror
-- `/admin` — remote layout control
-- `/api/mirror-state` — current selected layout
-- `/api/version` — deployment fingerprint used for auto-update detection
-- `/api/weather` — server-side Open-Meteo proxy
-
-## Local development
+## Run locally
 
 ```bash
 npm install
@@ -36,168 +21,123 @@ npm run dev
 
 Open:
 
-```text
-http://localhost:3000
-http://localhost:3000/admin
+- `http://localhost:3000` — mirror
+- `http://localhost:3000/admin` — layout control
+
+## Firebase project already wired in
+
+The project uses the Firebase web configuration supplied for:
+
+- Project: `jollytiles`
+- Realtime Database: `https://jollytiles.firebaseio.com`
+- Mirror state path: `/gocreatemirror/state`
+
+The Firebase web API key is intentionally client-visible and is not an admin secret. **Do not put a service-account private key in the source code.**
+
+## One-time Firebase setup
+
+### 1. Set Realtime Database Rules
+
+Firebase Console -> **Realtime Database** -> **Rules** and use the contents of `database.rules.json`:
+
+```json
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "gocreatemirror": {
+      "state": {
+        ".read": true,
+        ".write": false,
+        ".validate": "newData.hasChildren(['layout', 'updatedAt']) && newData.child('layout').isString() && newData.child('updatedAt').isString()"
+      }
+    }
+  }
+}
 ```
 
-## Deploy updates
+This exposes only the selected mirror layout for realtime reading and blocks direct browser writes. The Vercel API uses Firebase Admin and can write securely despite that rule.
 
-Push normally:
+### 2. Give Vercel Firebase Admin credentials
 
-```bash
-git add .
-git commit -m "Update GoCreateMirror"
-git push
-```
+Firebase Console -> **Project settings** -> **Service accounts** -> **Generate new private key**.
 
-Vercel deploys it. The Pi polls `/api/version`. When the production alias moves to the new deployment, the mirror notices the changed deployment fingerprint, displays a short `NEW BUILD / Updating mirror…` message, and reloads itself. Default poll time is 15 seconds.
-
-No Pi reboot is required for normal UI updates.
-
-## Make `/admin` control the Pi remotely
-
-A serverless Vercel deployment needs a tiny persistent store so your laptop and the Pi share the same selected layout. This project supports Upstash Redis directly and does not require an extra npm package.
-
-### Recommended Vercel setup
-
-1. Open your GoCreateMirror project in Vercel.
-2. Open **Marketplace / Integrations**.
-3. Add **Upstash Redis** to this project.
-4. Create or link a Redis database.
-5. Confirm Vercel has added:
-   - `UPSTASH_REDIS_REST_URL`
-   - `UPSTASH_REDIS_REST_TOKEN`
-6. Redeploy the project once.
-7. Open `https://gocreatemirror.vercel.app/admin`.
-
-The admin screen will say **PERSISTENT REMOTE CONTROL** when it is connected. Selecting a card changes the real mirror within a few seconds.
-
-The code also understands the older/common `KV_REST_API_URL` + `KV_REST_API_TOKEN` names.
-
-### Optional admin PIN
-
-Add this Vercel environment variable:
-
-```text
-ADMIN_PIN=your-pin-here
-```
-
-Redeploy. `/admin` will then require that PIN before a layout change is accepted. The PIN stays server-side and is never compiled into the mirror bundle.
-
-## Layouts
-
-### Signature v2
-
-Default. Designed around the photo of the installed mirror. It deliberately keeps a large central reflection area while increasing the size of the things that were too small at real standing distance.
-
-### Twin Rails
-
-Time/weather on one edge and status/studios on the other. The middle is almost untouched mirror.
-
-### Halo
-
-Centered GoCreate mark with a subtle ring treatment, plus restrained live information at the top and bottom.
-
-### Studio Grid
-
-Bolder layout for showing the six studio areas from farther away.
-
-### Icon Only
-
-Black background plus the official GoCreate symbol in the exact center. No clock, weather, copy, or footer.
-
-## Weather
-
-The browser now calls:
+Download the JSON file. In Vercel -> GoCreateMirror -> **Settings** -> **Environment Variables**, add:
 
 ```text
-/api/weather
+FIREBASE_PROJECT_ID=jollytiles
+FIREBASE_DATABASE_URL=https://jollytiles.firebaseio.com
+FIREBASE_CLIENT_EMAIL=<client_email from the JSON file>
+FIREBASE_PRIVATE_KEY=<private_key from the JSON file>
 ```
 
-Vercel then calls Open-Meteo. This avoids making the Pi's Chromium browser depend directly on the third-party weather endpoint and should address the `WEATHER OFFLINE` state seen on the installed mirror.
-
-No weather API key is required.
-
-## Environment variables
-
-See `.env.example`.
-
-Useful defaults:
+For `FIREBASE_PRIVATE_KEY`, paste the full value including:
 
 ```text
-NEXT_PUBLIC_DEPLOY_POLL_SECONDS=15
-NEXT_PUBLIC_STATE_POLL_SECONDS=5
-NEXT_PUBLIC_FALLBACK_RELOAD_MINUTES=60
+-----BEGIN PRIVATE KEY-----
+...
+-----END PRIVATE KEY-----
 ```
+
+Vercel supports multiline environment values. The code also accepts a value containing literal `\n` sequences.
+
+Alternatively set a single `FIREBASE_SERVICE_ACCOUNT_JSON` environment variable to the complete downloaded JSON document.
+
+**Never commit the service-account JSON or private key to GitHub.**
+
+### 3. Optional admin PIN
+
+In Vercel add:
+
+```text
+ADMIN_PIN=your-pin
+```
+
+Then redeploy.
+
+## How remote switching works
+
+```text
+/admin
+  -> POST /api/mirror-state
+  -> ADMIN_PIN checked on Vercel
+  -> Firebase Admin writes /gocreatemirror/state
+  -> Firebase Realtime Database pushes the new value
+  -> Pi changes layout immediately
+```
+
+The Pi has a normal API polling fallback in case the Firebase websocket cannot connect.
+
+## Automatic code deployment detection
+
+The mirror separately checks `/api/version` every 15 seconds. When Vercel moves production to a new deployment, the mirror shows an update message and reloads into the new build. This is independent of Firebase layout switching.
 
 ## Raspberry Pi
 
-The existing one-shot kiosk installer is still included:
+For an already configured Pi pointing at `https://gocreatemirror.vercel.app`, no Pi changes are required. Deploy this version to the same Vercel domain.
+
+For a fresh Pi with Raspberry Pi OS 64-bit Desktop:
 
 ```bash
-bash scripts/install-kiosk.sh
+bash setup-gocreatemirror.sh
 ```
 
-It targets:
-
-```text
-https://gocreatemirror.vercel.app
-```
-
-and configures the Pi for the vertical Chromium kiosk. You do **not** need to rerun the installer when deploying this v2 UI if the Pi is already displaying that URL.
-
-If the display is mounted the opposite direction:
+Default rotation is 90 degrees. If the monitor is upside down:
 
 ```bash
-bash scripts/install-kiosk.sh 270
+bash setup-gocreatemirror.sh 270
 ```
 
-## Main files
+## Useful files
 
 ```text
-app/
-  page.tsx
-  admin/page.tsx
-  api/mirror-state/route.ts
-  api/version/route.ts
-  api/weather/route.ts
-  globals.css
-components/
-  MirrorDashboard.tsx
-  WeatherGlyph.tsx
-lib/
-  layouts.ts
-  mirror-config.ts
-  mirror-store.ts
-  facility-hours.ts
-  weather.ts
-public/brand/
-  gocreate-color.svg
-  gocreate-white.svg
-  gocreate-icon.png
-  wsu-white.svg
-scripts/
-  install-kiosk.sh
-```
-
-## Editing the UI
-
-Most visual work is in:
-
-```text
-app/globals.css
-components/MirrorDashboard.tsx
-```
-
-Layout names/options are in:
-
-```text
-lib/layouts.ts
-```
-
-Operational values, studios, copy, and polling intervals are in:
-
-```text
-lib/mirror-config.ts
+app/admin/page.tsx             remote control UI
+app/api/mirror-state/route.ts  secure state API
+components/MirrorDashboard.tsx mirror + Firebase realtime subscription
+lib/firebase-client.ts         browser realtime subscription
+lib/firebase-config.ts         jollytiles web configuration
+lib/mirror-store.ts            Firebase Admin reads/writes
+database.rules.json            recommended RTDB rules
+lib/layouts.ts                 available UI layouts
+app/globals.css                mirror + admin styling
 ```

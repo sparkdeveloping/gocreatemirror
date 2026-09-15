@@ -302,7 +302,10 @@ export function MirrorDashboard() {
 
   useEffect(() => {
     let active = true;
-    async function loadState() {
+    let unsubscribe: (() => void) | undefined;
+    let fallbackTimer: number | undefined;
+
+    async function fallbackRead() {
       try {
         const response = await fetch(`/api/mirror-state?t=${Date.now()}`, { cache: "no-store" });
         if (!response.ok) return;
@@ -310,9 +313,33 @@ export function MirrorDashboard() {
         if (active && data.layout) setLayout(data.layout);
       } catch {}
     }
-    loadState();
-    const timer = window.setInterval(loadState, Math.max(MIRROR_CONFIG.statePollSeconds, 2) * 1000);
-    return () => { active = false; window.clearInterval(timer); };
+
+    function startFallbackPolling() {
+      if (fallbackTimer) return;
+      fallbackRead();
+      fallbackTimer = window.setInterval(
+        fallbackRead,
+        Math.max(MIRROR_CONFIG.statePollSeconds, 5) * 1000,
+      );
+    }
+
+    import("@/lib/firebase-client")
+      .then(({ subscribeToMirrorState }) => {
+        if (!active) return;
+        unsubscribe = subscribeToMirrorState(
+          (state) => {
+            if (active) setLayout(state.layout);
+          },
+          () => startFallbackPolling(),
+        );
+      })
+      .catch(() => startFallbackPolling());
+
+    return () => {
+      active = false;
+      unsubscribe?.();
+      if (fallbackTimer) window.clearInterval(fallbackTimer);
+    };
   }, []);
 
   useEffect(() => {

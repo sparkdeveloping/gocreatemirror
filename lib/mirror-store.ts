@@ -1,3 +1,6 @@
+import { cert, getApp, getApps, initializeApp, type App } from "firebase-admin/app";
+import { getDatabase } from "firebase-admin/database";
+import { FIREBASE_CONFIG, FIREBASE_MIRROR_STATE_PATH } from "./firebase-config";
 import { isLayoutId, type LayoutId } from "./layouts";
 
 export type MirrorState = {
@@ -5,51 +8,64 @@ export type MirrorState = {
   updatedAt: string;
 };
 
-const KEY = process.env.MIRROR_STATE_KEY || "gocreatemirror:state";
 const DEFAULT_STATE: MirrorState = {
   layout: "signature",
   updatedAt: new Date(0).toISOString(),
 };
 
-type MemoryGlobal = typeof globalThis & { __gocreateMirrorState?: MirrorState };
+function privateKey() {
+  return process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n").trim() || "";
+}
 
-function redisConfig() {
-  const url =
-    process.env.UPSTASH_REDIS_REST_URL ||
-    process.env.KV_REST_API_URL ||
-    process.env.REDIS_REST_URL ||
-    "";
-  const token =
-    process.env.UPSTASH_REDIS_REST_TOKEN ||
-    process.env.KV_REST_API_TOKEN ||
-    process.env.REDIS_REST_TOKEN ||
-    "";
-  return { url: url.replace(/\/$/, ""), token };
+function serviceAccountFromEnv() {
+  const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
+  if (json) {
+    try {
+      const parsed = JSON.parse(json) as {
+        project_id?: string;
+        client_email?: string;
+        private_key?: string;
+      };
+      if (parsed.project_id && parsed.client_email && parsed.private_key) {
+        return {
+          projectId: parsed.project_id,
+          clientEmail: parsed.client_email,
+          privateKey: parsed.private_key.replace(/\\n/g, "\n"),
+        };
+      }
+    } catch (error) {
+      console.error("FIREBASE_SERVICE_ACCOUNT_JSON is invalid JSON:", error);
+    }
+  }
+
+  const projectId = process.env.FIREBASE_PROJECT_ID || FIREBASE_CONFIG.projectId;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL?.trim();
+  const key = privateKey();
+  if (projectId && clientEmail && key) {
+    return { projectId, clientEmail, privateKey: key };
+  }
+
+  return null;
 }
 
 export function hasPersistentMirrorStore() {
-  const { url, token } = redisConfig();
-  return Boolean(url && token);
+  return Boolean(serviceAccountFromEnv());
 }
 
-async function redisCommand(command: unknown[]) {
-  const { url, token } = redisConfig();
-  if (!url || !token) throw new Error("Persistent mirror state is not configured.");
+function adminApp(): App {
+  if (getApps().length) return getApp();
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(command),
-    cache: "no-store",
+  const account = serviceAccountFromEnv();
+  if (!account) {
+    throw new Error(
+      "Firebase Admin is not configured. Add FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY (or FIREBASE_SERVICE_ACCOUNT_JSON) in Vercel.",
+    );
+  }
+
+  return initializeApp({
+    credential: cert(account),
+    databaseURL: process.env.FIREBASE_DATABASE_URL || FIREBASE_CONFIG.databaseURL,
   });
-
-  if (!response.ok) throw new Error(`Redis request failed (${response.status}).`);
-  const payload = (await response.json()) as { result?: unknown; error?: string };
-  if (payload.error) throw new Error(payload.error);
-  return payload.result;
 }
 
 function normalizeState(input: unknown): MirrorState | null {
@@ -62,31 +78,47 @@ function normalizeState(input: unknown): MirrorState | null {
   };
 }
 
+async function publicRead(): Promise<MirrorState | null> {
+  const base = (process.env.FIREBASE_DATABASE_URL || FIREBASE_CONFIG.databaseURL).replace(/\/$/, "");
+  const response = await fetch(`${base}/${FIREBASE_MIRROR_STATE_PATH}.json`, {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) return null;
+  return normalizeState(await response.json());
+}
+
 export async function readMirrorState(): Promise<MirrorState> {
+  // If Admin credentials are configured, use the Admin SDK. Otherwise the GET
+  // endpoint can still read through the database's read-only public rule.
   if (hasPersistentMirrorStore()) {
     try {
-      const raw = await redisCommand(["GET", KEY]);
-      if (typeof raw === "string") {
-        const parsed = normalizeState(JSON.parse(raw));
-        if (parsed) return parsed;
-      }
+      const snapshot = await getDatabase(adminApp()).ref(FIREBASE_MIRROR_STATE_PATH).get();
+      const state = normalizeState(snapshot.val());
+      if (state) return state;
     } catch (error) {
-      console.error("Mirror state read failed:", error);
+      console.error("Firebase mirror-state read failed:", error);
     }
   }
 
-  const memory = globalThis as MemoryGlobal;
-  return memory.__gocreateMirrorState || DEFAULT_STATE;
+  try {
+    return (await publicRead()) || DEFAULT_STATE;
+  } catch (error) {
+    console.error("Firebase public mirror-state read failed:", error);
+    return DEFAULT_STATE;
+  }
 }
 
 export async function writeMirrorState(layout: LayoutId): Promise<MirrorState> {
-  const next: MirrorState = { layout, updatedAt: new Date().toISOString() };
-  const memory = globalThis as MemoryGlobal;
-  memory.__gocreateMirrorState = next;
-
-  if (hasPersistentMirrorStore()) {
-    await redisCommand(["SET", KEY, JSON.stringify(next)]);
+  if (!hasPersistentMirrorStore()) {
+    throw new Error("Firebase Admin credentials are not configured in Vercel.");
   }
 
+  const next: MirrorState = {
+    layout,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await getDatabase(adminApp()).ref(FIREBASE_MIRROR_STATE_PATH).set(next);
   return next;
 }

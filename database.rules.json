@@ -1,0 +1,13 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "gocreatemirror": {
+      "state": {
+        ".read": true,
+        ".write": false,
+        ".validate": "newData.hasChildren(['layout', 'updatedAt']) && newData.child('layout').isString() && newData.child('updatedAt').isString()"
+      }
+    }
+  }
+}

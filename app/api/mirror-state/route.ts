@@ -3,6 +3,7 @@ import { isLayoutId } from "@/lib/layouts";
 import { hasPersistentMirrorStore, readMirrorState, writeMirrorState } from "@/lib/mirror-store";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 const noStoreHeaders = {
   "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
@@ -14,6 +15,8 @@ export async function GET() {
     {
       ...state,
       persistent: hasPersistentMirrorStore(),
+      store: "firebase-realtime-database",
+      realtime: true,
     },
     { headers: noStoreHeaders },
   );
@@ -40,13 +43,21 @@ export async function POST(request: Request) {
   try {
     const state = await writeMirrorState(body.layout);
     return NextResponse.json(
-      { ...state, persistent: hasPersistentMirrorStore() },
+      {
+        ...state,
+        persistent: true,
+        store: "firebase-realtime-database",
+        realtime: true,
+      },
       { headers: noStoreHeaders },
     );
   } catch (error) {
     console.error(error);
     return NextResponse.json(
-      { error: "Could not save mirror state. Check Redis environment variables." },
+      {
+        error:
+          "Could not save mirror state. Add Firebase Admin credentials in Vercel, then redeploy.",
+      },
       { status: 500, headers: noStoreHeaders },
     );
   }
